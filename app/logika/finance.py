@@ -1,3 +1,5 @@
+from logika.database import get_db_connection
+
 def calculate_work_hours(price, hourly_rate):
     """Izračuna koliko ur moraš delati za določen predmet."""
     if hourly_rate <= 0: return 0
