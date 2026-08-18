@@ -83,16 +83,15 @@ class LifeFrame(customtkinter.CTkFrame):
         # 2. DEL: Izris dogodkov z avtomatskim zlaganjem
         try:
             from logika.database import get_db_connection
-            conn = get_db_connection()
-            cursor = conn.cursor()
-            zadnji_dan = calendar.monthrange(self.year, self.month)[1]
-            start_str = f"{self.year}-{self.month:02d}-01"
-            end_str = f"{self.year}-{self.month:02d}-{zadnji_dan}"
-            cursor.execute(
-                "SELECT * FROM dogodki WHERE datum_zacetek <= ? AND datum_konec >= ?",
-                (end_str, start_str))
-            vsi_dogodki = cursor.fetchall()
-            conn.close()
+            with get_db_connection() as conn:
+                cursor = conn.cursor()
+                zadnji_dan = calendar.monthrange(self.year, self.month)[1]
+                start_str = f"{self.year}-{self.month:02d}-01"
+                end_str = f"{self.year}-{self.month:02d}-{zadnji_dan}"
+                cursor.execute(
+                    "SELECT * FROM dogodki WHERE datum_zacetek <= ? AND datum_konec >= ?",
+                    (end_str, start_str))
+                vsi_dogodki = cursor.fetchall()
 
             uporabljena_visina = {}  # Ključ bo "vrstica-dan"
 
@@ -233,20 +232,19 @@ class LifeFrame(customtkinter.CTkFrame):
         def shrani():
             try:
                 from logika.database import get_db_connection
-                conn = get_db_connection()
-                cur = conn.cursor()
-                vals = (naslov_entry.get(), start_ent.get(), end_ent.get(), ura_od.get(), ura_do.get(),
-                        self.izbrana_barva, opis_text.get("0.0", "end").strip())
-                if obstojec_dogodek:
-                    cur.execute(
-                        "UPDATE dogodki SET naslov=?, datum_zacetek=?, datum_konec=?, ura_od=?, ura_do=?, barva=?, opis=? WHERE id=?",
-                        (*vals, obstojec_dogodek[0]))
-                else:
-                    cur.execute(
-                        "INSERT INTO dogodki (naslov, datum_zacetek, datum_konec, ura_od, ura_do, barva, opis) VALUES (?,?,?,?,?,?,?)",
-                        vals)
-                conn.commit()
-                conn.close()
+                with get_db_connection() as conn:
+                    cur = conn.cursor()
+                    vals = (naslov_entry.get(), start_ent.get(), end_ent.get(), ura_od.get(), ura_do.get(),
+                            self.izbrana_barva, opis_text.get("0.0", "end").strip())
+                    if obstojec_dogodek:
+                        cur.execute(
+                            "UPDATE dogodki SET naslov=?, datum_zacetek=?, datum_konec=?, ura_od=?, ura_do=?, barva=?, opis=? WHERE id=?",
+                            (*vals, obstojec_dogodek[0]))
+                    else:
+                        cur.execute(
+                            "INSERT INTO dogodki (naslov, datum_zacetek, datum_konec, ura_od, ura_do, barva, opis) VALUES (?,?,?,?,?,?,?)",
+                            vals)
+                    conn.commit()
             except Exception as e:
                 print(f"Napaka pri shranjevanju: {e}")
             edit_window.destroy()
@@ -258,11 +256,10 @@ class LifeFrame(customtkinter.CTkFrame):
         if obstojec_dogodek:
             def izbrisi():
                 from logika.database import get_db_connection
-                conn = get_db_connection()
-                cur = conn.cursor()
-                cur.execute("DELETE FROM dogodki WHERE id=?", (obstojec_dogodek[0],))
-                conn.commit()
-                conn.close()
+                with get_db_connection() as conn:
+                    cur = conn.cursor()
+                    cur.execute("DELETE FROM dogodki WHERE id=?", (obstojec_dogodek[0],))
+                    conn.commit()
                 edit_window.destroy()
                 self.draw_calendar()
 

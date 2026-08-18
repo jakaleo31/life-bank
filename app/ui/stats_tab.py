@@ -61,26 +61,24 @@ class StatsFrame(customtkinter.CTkFrame):
 
     def posodobi_graf_in_porabo(self):
         try:
-            conn = get_db_connection()
-            vnos = conn.cursor()
-            mesec_leto = datetime.datetime.now().strftime("%Y-%m")
+            with get_db_connection() as conn:
+                vnos = conn.cursor()
+                mesec_leto = datetime.datetime.now().strftime("%Y-%m")
 
-            # Top 5 kategorij odhodkov (uporabimo opis kot kategorijo)
-            vnos.execute("""
-                SELECT opis, SUM(abs(znesek)) 
-                FROM transakcije 
-                WHERE tip='odhodek' 
-                GROUP BY opis 
-                ORDER BY SUM(abs(znesek)) DESC 
-                LIMIT 5
-            """)
-            podatki_torta = vnos.fetchall()
+                # Top 5 kategorij odhodkov (uporabimo opis kot kategorijo)
+                vnos.execute("""
+                    SELECT opis, SUM(abs(znesek))
+                    FROM transakcije
+                    WHERE tip='odhodek'
+                    GROUP BY opis
+                    ORDER BY SUM(abs(znesek)) DESC
+                    LIMIT 5
+                """)
+                podatki_torta = vnos.fetchall()
 
-            vnos.execute("SELECT SUM(abs(znesek)) FROM transakcije WHERE tip='odhodek' AND datum LIKE ?",
-                         (f'{mesec_leto}%',))
-            poraba_mesec = vnos.fetchone()[0] or 0.0
-
-            conn.close()
+                vnos.execute("SELECT SUM(abs(znesek)) FROM transakcije WHERE tip='odhodek' AND datum LIKE ?",
+                             (f'{mesec_leto}%',))
+                poraba_mesec = vnos.fetchone()[0] or 0.0
 
             self.label_mesecna_poraba.configure(text=f'Poraba ta mesec: {poraba_mesec:.2f} €')
             self.narisi_graf(podatki_torta)
@@ -89,17 +87,16 @@ class StatsFrame(customtkinter.CTkFrame):
 
     def update_progress(self):
         try:
-            conn = get_db_connection()
-            cursor = conn.cursor()
+            with get_db_connection() as conn:
+                cursor = conn.cursor()
 
-            cursor.execute("SELECT SUM(znesek) FROM transakcije")
-            rezultat = cursor.fetchone()[0]
-            trenutno_stanje = float(rezultat) if rezultat is not None else 0.0
+                cursor.execute("SELECT SUM(znesek) FROM transakcije")
+                rezultat = cursor.fetchone()[0]
+                trenutno_stanje = float(rezultat) if rezultat is not None else 0.0
 
-            cursor.execute("SELECT value FROM settings WHERE key = 'savings_goal' LIMIT 1")
-            res = cursor.fetchone()
-            cilj = float(res[0]) if res else 1000.0
-            conn.close()
+                cursor.execute("SELECT value FROM settings WHERE key = 'savings_goal' LIMIT 1")
+                res = cursor.fetchone()
+                cilj = float(res[0]) if res else 1000.0
 
             napredek = trenutno_stanje / cilj if cilj > 0 else 0
             napredek = max(0, min(napredek, 1.0))
@@ -112,13 +109,13 @@ class StatsFrame(customtkinter.CTkFrame):
 
     def ogenj(self):
         try:
-            conn = get_db_connection()
-            vnos = conn.cursor()
-            danes = datetime.datetime.now().strftime("%Y-%m-%d")
+            with get_db_connection() as conn:
+                vnos = conn.cursor()
+                danes = datetime.datetime.now().strftime("%Y-%m-%d")
 
-            # Preverimo današnje aktivnosti
-            t1 = vnos.execute('SELECT COUNT(*) FROM transakcije WHERE datum = ?', (danes,)).fetchone()[0]
-            t2 = vnos.execute("SELECT COUNT(*) FROM dogodki WHERE datum_zacetek LIKE ?", (f'{danes}%',)).fetchone()[0]
+                # Preverimo današnje aktivnosti
+                t1 = vnos.execute('SELECT COUNT(*) FROM transakcije WHERE datum = ?', (danes,)).fetchone()[0]
+                t2 = vnos.execute("SELECT COUNT(*) FROM dogodki WHERE datum_zacetek LIKE ?", (f'{danes}%',)).fetchone()[0]
 
             if (t1 + t2) > 0:
                 self.fire_label.configure(text_color="#ff8c00", text="1🔥")
@@ -126,7 +123,6 @@ class StatsFrame(customtkinter.CTkFrame):
             else:
                 self.fire_label.configure(text_color="#9f9f9f", text="0🔥")
                 self.streak_desc.configure(text="Danes še nimaš vnosa", text_color="gray")
-            conn.close()
         except Exception as e:
             print(f"Napaka pri ognju: {e}")
 

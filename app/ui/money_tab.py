@@ -124,19 +124,16 @@ class MoneyFrame(customtkinter.CTkFrame):
     def create_graph(self):
         # 1. PRIDOBIVANJE PODATKOV
         try:
-            povezava_z_bazo = get_db_connection()
-            vnos = povezava_z_bazo.cursor()
+            with get_db_connection() as conn:
+                vnos = conn.cursor()
 
-            vnos.execute('SELECT znesek FROM transakcije')
-            podatki = vnos.fetchall()
-            cisti_zneski = [vrstica[0] for vrstica in podatki]
+                vnos.execute('SELECT znesek FROM transakcije')
+                podatki = vnos.fetchall()
+                cisti_zneski = [vrstica[0] for vrstica in podatki]
 
-            vnos.execute("SELECT value FROM settings WHERE key = 'premium' LIMIT 1")
-            rezultat = vnos.fetchone()
-            premium = rezultat[0] if rezultat else 0
-
-            vnos.close()
-            povezava_z_bazo.close()
+                vnos.execute("SELECT value FROM settings WHERE key = 'premium' LIMIT 1")
+                rezultat = vnos.fetchone()
+                premium = rezultat[0] if rezultat else 0
         except Exception as e:
             print(f"Napaka pri branju baze za graf: {e}")
             return
@@ -211,76 +208,164 @@ class MoneyFrame(customtkinter.CTkFrame):
             self.result_label.configure(text="Vnesi številko!", text_color="#e74c3c")
             print(e)
 
-    def transakcija(self):
+    def transakcija(self, obstojeca_transakcija=None):
+        """Odpre okno za vnos/urejanje transakcije.
+        Če je podan obstojeca_transakcija (tuple iz baze), se prikažejo obstoječi podatki.
+        """
         self.okno_transakcija = customtkinter.CTkToplevel(self)
-        if self.tip_transakcije == 'prihodek':
-            self.okno_transakcija.title("Prihodki")
+
+        if obstojeca_transakcija:
+            # Urejanje obstoječe transakcije
+            naslov = "Uredi transakcijo"
+            self.tip_transakcije = obstojeca_transakcija[1]
         else:
-            self.okno_transakcija.title("Odhodki")
+            naslov = "Prihodki" if self.tip_transakcije == 'prihodek' else "Odhodki"
+
+        self.okno_transakcija.title(naslov)
         sirina_okna = self.winfo_screenwidth()
         visina_okna = self.winfo_screenheight()
-        x = (sirina_okna // 2) - (300 / 2)
-        y = (visina_okna // 2) - (200 / 2)
-        self.okno_transakcija.geometry(f"350x300+{x}+{y}")
-        if self.tip_transakcije == 'prihodek':
-            naslov_okna = customtkinter.CTkLabel(self.okno_transakcija, text="Prihodki", font=("Arial", 18, "bold"))
-        else:
-            naslov_okna = customtkinter.CTkLabel(self.okno_transakcija, text="Odhodki", font=("Arial", 18, "bold"))
-        naslov_okna.pack(fill="x", pady=10)
-        self.znesek = customtkinter.CTkEntry(self.okno_transakcija, placeholder_text="Vnesi znesek(€)")
-        self.znesek.pack(fill="x", pady=10)
-        self.datum = customtkinter.CTkEntry(self.okno_transakcija, placeholder_text="Vnesi datum (llll-mm-dd)")
-        self.datum.pack(fill="x", pady=10)
-        self.opis = customtkinter.CTkEntry(self.okno_transakcija, placeholder_text='Opis')
-        self.opis.pack(fill="x", pady=10)
+        x = (sirina_okna // 2) - (175)
+        y = (visina_okna // 2) - (175)
+        self.okno_transakcija.geometry(f"350x380+{x}+{y}")
         self.okno_transakcija.attributes("-topmost", True)
-        shrani_potrdi = customtkinter.CTkButton(self.okno_transakcija, text="Shrani/Potrdi", font=("Arial", 18, "bold"),
-                                                command=self.vzemi_shrani)
-        shrani_potrdi.pack(fill="x", pady=15)
+
+        naslov_okna = customtkinter.CTkLabel(self.okno_transakcija, text=naslov, font=("Arial", 18, "bold"))
+        naslov_okna.pack(fill="x", pady=10)
+
+        # Izbirnik tipa (samo pri urejanju)
+        if obstojeca_transakcija:
+            tip_frame = customtkinter.CTkFrame(self.okno_transakcija, fg_color="transparent")
+            tip_frame.pack(fill="x", padx=20, pady=5)
+            self.tip_var_urejanje = customtkinter.StringVar(value=self.tip_transakcije)
+            customtkinter.CTkRadioButton(tip_frame, text="Prihodek", variable=self.tip_var_urejanje,
+                                          value="prihodek", command=self.osvezi_predznak_znesek).pack(side="left", padx=10)
+            customtkinter.CTkRadioButton(tip_frame, text="Odhodek", variable=self.tip_var_urejanje,
+                                          value="odhodek", command=self.osvezi_predznak_znesek).pack(side="left", padx=10)
+
+        self.znesek = customtkinter.CTkEntry(self.okno_transakcija, placeholder_text="Vnesi znesek (€)")
+        self.znesek.pack(fill="x", padx=20, pady=5)
+        self.datum = customtkinter.CTkEntry(self.okno_transakcija, placeholder_text="Vnesi datum (llll-mm-dd)")
+        self.datum.pack(fill="x", padx=20, pady=5)
+        self.opis = customtkinter.CTkEntry(self.okno_transakcija, placeholder_text='Opis')
+        self.opis.pack(fill="x", padx=20, pady=5)
+
+        # Predizpolnimo, če je podan obstoječa transakcija
+        if obstojeca_transakcija:
+            # Znesek prikažemo kot absolutno vrednost (predznak določa tip)
+            abs_znesek = abs(obstojeca_transakcija[2])
+            self.znesek.insert(0, f"{abs_znesek:.2f}")
+            self.datum.insert(0, obstojeca_transakcija[3])
+            self.opis.insert(0, obstojeca_transakcija[4] or "")
+
+        # Gumbi v eni vrstici
+        btn_frame = customtkinter.CTkFrame(self.okno_transakcija, fg_color="transparent")
+        btn_frame.pack(fill="x", padx=20, pady=15)
+
+        customtkinter.CTkButton(
+            btn_frame, text="Shrani", font=("Arial", 16, "bold"),
+            fg_color="#5ed77a", text_color="black", hover_color="#429656",
+            command=lambda: self.vzemi_shrani(
+                transakcija_id=obstojeca_transakcija[0] if obstojeca_transakcija else None
+            )
+        ).pack(side="left", expand=True, padx=(0, 5))
+
+        # Gumb "Izbriši" samo pri urejanju
+        if obstojeca_transakcija:
+            customtkinter.CTkButton(
+                btn_frame, text="Izbriši", font=("Arial", 16, "bold"),
+                fg_color="#e74c3c", hover_color="#9c3025",
+                command=lambda: self.izbrisi_transakcijo(obstojeca_transakcija[0])
+            ).pack(side="left", expand=True, padx=(5, 0))
+        else:
+            customtkinter.CTkButton(
+                btn_frame, text="Prekliči", font=("Arial", 16, "bold"),
+                fg_color="gray",
+                command=self.okno_transakcija.destroy
+            ).pack(side="left", expand=True, padx=(5, 0))
+
+    def osvezi_predznak_znesek(self):
+        """Pri urejanju - če spremenimo tip, posodobi label."""
+        self.tip_transakcije = self.tip_var_urejanje.get()
+
+    def izbrisi_transakcijo(self, transakcija_id):
+        """Izbriše transakcijo s potrditvenim oknom."""
+        potrditev = customtkinter.CTkToplevel(self)
+        potrditev.title("Potrditev brisanja")
+        potrditev.geometry("350x150")
+        potrditev.attributes("-topmost", True)
+        potrditev.grab_set()
+        x = (self.winfo_screenwidth() // 2) - 175
+        y = (self.winfo_screenheight() // 2) - 75
+        potrditev.geometry(f"350x150+{x}+{y}")
+
+        customtkinter.CTkLabel(
+            potrditev, text="Izbrišem to transakcijo?",
+            font=("Arial", 14, "bold"), text_color="#e74c3c"
+        ).pack(pady=(30, 10))
+
+        def potrdi():
+            try:
+                with get_db_connection() as conn:
+                    cur = conn.cursor()
+                    cur.execute("DELETE FROM transakcije WHERE id=?", (transakcija_id,))
+                    conn.commit()
+            except Exception as e:
+                print(f"Napaka pri brisanju transakcije: {e}")
+            potrditev.destroy()
+            self.okno_transakcija.destroy()
+            self.create_graph()
+            self.osvezi_seznam()
+
+        btn_frame = customtkinter.CTkFrame(potrditev, fg_color="transparent")
+        btn_frame.pack(fill="x", padx=20, pady=10)
+        customtkinter.CTkButton(btn_frame, text="Prekliči", fg_color="gray",
+                                 command=potrditev.destroy).pack(side="left", expand=True, padx=5)
+        customtkinter.CTkButton(btn_frame, text="Izbriši", fg_color="#e74c3c", hover_color="#9c3025",
+                                 command=potrdi).pack(side="left", expand=True, padx=5)
 
     def vzemi_shrani(self, transakcija_id=None):
+        datum = self.datum.get().strip()
         try:
-            povezava_z_bazo = get_db_connection()
-            vnos_v_bazo = povezava_z_bazo.cursor()
+            # Preverjanje datuma
+            pravilni_datum = datetime.datetime.strptime(datum, "%Y-%m-%d")
+            datum_str = pravilni_datum.strftime("%Y-%m-%d")
+        except ValueError:
+            print("Napaka: napačen format datuma")
+            return
 
-            datum = self.datum.get().strip()
-            try:
-                # Preverjanje datuma
-                pravilni_datum = datetime.datetime.strptime(datum, "%Y-%m-%d")
-                datum_str = pravilni_datum.strftime("%Y-%m-%d")
-            except ValueError:
-                print("Napaka: napačen format datuma")
-                return
+        # PRAVILNA PRETVORBA ZNESKA
+        znesek_raw = self.znesek.get().replace(',', '.')
+        try:
+            znesek = float(znesek_raw)
+        except ValueError:
+            # USTVARIMO NAPAKO, KI JO UPORABNIK VIDI
+            napaka_label = customtkinter.CTkLabel(
+                self.okno_transakcija,
+                text="Napaka: Vpiši samo številke!",
+                text_color="#e74c3c",
+                font=("Arial", 12, "bold")
+            )
+            napaka_label.pack(pady=5)
+            return
 
-            # PRAVILNA PRETVORBA ZNESKA
-            znesek_raw = self.znesek.get().replace(',', '.')
-            try:
-                znesek = float(znesek_raw)
+        # Uporabimo tip iz radio gumbov, če smo v načinu urejanja
+        if transakcija_id and hasattr(self, 'tip_var_urejanje'):
+            self.tip_transakcije = self.tip_var_urejanje.get()
 
-            except ValueError:
-                # USTVARIMO NAPAKO, KI JO UPORABNIK VIDI
-                napaka_label = customtkinter.CTkLabel(
-                    self.okno_transakcija,
-                    text="Napaka: Vpiši samo številke!",
-                    text_color="#e74c3c",
-                    font=("Arial", 12, "bold")
-                )
-                napaka_label.pack(pady=5)
-                return
+        if self.tip_transakcije == "odhodek" and znesek > 0:
+            znesek *= -1
 
-            if self.tip_transakcije == "odhodek" and znesek > 0:
-                znesek *= -1
+        values = (self.tip_transakcije, znesek, datum_str, self.opis.get())
 
-            values = (self.tip_transakcije, znesek, datum_str, self.opis.get())
-
-            if transakcija_id:
-                vnos_v_bazo.execute("UPDATE transakcije SET tip=?, znesek=?, datum=?, opis=? WHERE id=?",
-                                    (*values, transakcija_id))
-            else:
-                vnos_v_bazo.execute("INSERT INTO transakcije (tip, znesek, datum, opis) VALUES (?,?,?,?)", values)
-
-            povezava_z_bazo.commit()
-            povezava_z_bazo.close()
+        try:
+            with get_db_connection() as conn:
+                vnos_v_bazo = conn.cursor()
+                if transakcija_id:
+                    vnos_v_bazo.execute("UPDATE transakcije SET tip=?, znesek=?, datum=?, opis=? WHERE id=?",
+                                        (*values, transakcija_id))
+                else:
+                    vnos_v_bazo.execute("INSERT INTO transakcije (tip, znesek, datum, opis) VALUES (?,?,?,?)", values)
+                conn.commit()
 
             self.okno_transakcija.destroy()
             self.create_graph()
@@ -292,29 +377,46 @@ class MoneyFrame(customtkinter.CTkFrame):
         self.tip_transakcije = tip
         self.transakcija()
 
+    def odpri_urejanje_transakcije(self, transakcija):
+        """Odpre okno za urejanje obstoječe transakcije (klicano ob kliku na vrstico)."""
+        # Najprej počistimo morebitne ostanke od prejšnjega radio gumba
+        if hasattr(self, 'tip_var_urejanje'):
+            try:
+                del self.tip_var_urejanje
+            except AttributeError:
+                pass
+        self.transakcija(obstojeca_transakcija=transakcija)
+
     def osvezi_seznam(self):
-        povezava = get_db_connection()
-        vnos_v_bazo = povezava.cursor()
-        for widget in self.seznam_transakcij_okvir.winfo_children():
-            widget.destroy()
-        podatki_v_bazi = vnos_v_bazo.execute("SELECT * FROM transakcije ORDER BY id DESC")
-        for vrstica_podatkov in podatki_v_bazi.fetchall():
-            if vrstica_podatkov[1] == 'prihodek':
-                predznak, barva = '+', '#38d15c'
-            else:
-                predznak, barva = '-', '#bd1e31'
-            vrstica = customtkinter.CTkFrame(self.seznam_transakcij_okvir, fg_color='transarent')
-            znesek_label = customtkinter.CTkLabel(vrstica, text_color=barva,
-                                                  text=f'{predznak}{abs(vrstica_podatkov[2])}€',
-                                                  font=("Arial", 18, "bold"))
-            znesek_label.pack(side="left", padx=10)
-            datum_label = customtkinter.CTkLabel(vrstica, text_color='white', text=f'Datum:{vrstica_podatkov[3]}',
-                                                 font=("Arial", 18, "bold"))
-            datum_label.pack(side="left", padx=10)
-            opis_label = customtkinter.CTkLabel(vrstica, text_color='white', text=f'{vrstica_podatkov[4]}',
-                                                font=("Arial", 18, "bold"))
-            opis_label.pack(side="left", padx=10)
-            vrstica.pack(fill="x", pady=10)
+        with get_db_connection() as povezava:
+            vnos_v_bazo = povezava.cursor()
+            for widget in self.seznam_transakcij_okvir.winfo_children():
+                widget.destroy()
+            podatki_v_bazi = vnos_v_bazo.execute("SELECT * FROM transakcije ORDER BY id DESC")
+            for vrstica_podatkov in podatki_v_bazi.fetchall():
+                if vrstica_podatkov[1] == 'prihodek':
+                    predznak, barva = '+', '#38d15c'
+                else:
+                    predznak, barva = '-', '#bd1e31'
+                vrstica = customtkinter.CTkFrame(self.seznam_transakcij_okvir, fg_color='transparent')
+                znesek_label = customtkinter.CTkLabel(vrstica, text_color=barva,
+                                                      text=f'{predznak}{abs(vrstica_podatkov[2])}€',
+                                                      font=("Arial", 18, "bold"))
+                znesek_label.pack(side="left", padx=10)
+                datum_label = customtkinter.CTkLabel(vrstica, text_color='white', text=f'Datum:{vrstica_podatkov[3]}',
+                                                     font=("Arial", 18, "bold"))
+                datum_label.pack(side="left", padx=10)
+                opis_label = customtkinter.CTkLabel(vrstica, text_color='white', text=f'{vrstica_podatkov[4]}',
+                                                    font=("Arial", 18, "bold"))
+                opis_label.pack(side="left", padx=10)
+                vrstica.pack(fill="x", pady=10)
+
+                # Klik na vrstico odpre urejanje te transakcije
+                vrstica.bind("<Button-1>",
+                             lambda e, t=vrstica_podatkov: self.odpri_urejanje_transakcije(t))
+                for child in (znesek_label, datum_label, opis_label):
+                    child.bind("<Button-1>",
+                                lambda e, t=vrstica_podatkov: self.odpri_urejanje_transakcije(t))
 
     def calculate(self):
         try:
@@ -345,11 +447,10 @@ class MoneyFrame(customtkinter.CTkFrame):
 
     def ai(self):
         try:
-            povezava = get_db_connection()
-            vnos = povezava.cursor()
-            vnos.execute("SELECT value FROM settings WHERE key = 'premium' LIMIT 1")
-            rezultat = vnos.fetchone()  # fetchone() vrne samo eno vrstico (npr. ('on',))
-            povezava.close()
+            with get_db_connection() as povezava:
+                vnos = povezava.cursor()
+                vnos.execute("SELECT value FROM settings WHERE key = 'premium' LIMIT 1")
+                rezultat = vnos.fetchone()  # fetchone() vrne samo eno vrstico (npr. ('on',))
 
             if rezultat:
                 premium_val = str(rezultat[0])  # Vzamemo prvo vrednost iz norke
@@ -382,7 +483,7 @@ class MoneyFrame(customtkinter.CTkFrame):
             elif potrebne_ure == 0:
                 self.savings_res_label.configure(text="Cilj je že dosežen! 🥳", text_color="#5ed77a")
             else:
-                self.savings_res_label.configure(text=f"Delati moraš še {potrebne_ure} ur.", text_color="#73b6f2")
+                self.savings_res_label.configure(text=f"Delati moraš še {potrebne_ure} ur.", text_color="white")
 
         except ValueError:
             self.savings_res_label.configure(text="Vnesi veljavne zneske!", text_color="#e74c3c")

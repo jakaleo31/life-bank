@@ -155,25 +155,23 @@ class SettingsFrame(customtkinter.CTkFrame):
     def checkbox_event(self):
         novo_stanje = self.check_var.get()
         try:
-            povezava = get_db_connection()
-            vnos = povezava.cursor()
-            vnos.execute('UPDATE settings SET value = ? WHERE key = "premium"',(novo_stanje,))
-            povezava.commit()
-            povezava.close()
-            print(f'Premuim status pododobljen:{novo_stanje} ')
+            with get_db_connection() as povezava:
+                vnos = povezava.cursor()
+                vnos.execute('UPDATE settings SET value = ? WHERE key = "premium"', (novo_stanje,))
+                povezava.commit()
+            print(f'Premium status posodobljen: {novo_stanje}')
         except Exception as e:
-            print(f'Napaka pri posodabljanju baze {e}')
+            print(f'Napaka pri posodabljanju baze: {e}')
 
     def posodobi_postavko(self):
         nova_vrednost = self.rate_entry.get().replace(',','.')
         if nova_vrednost:
             try:
-                znesek  =float(nova_vrednost)
-                conn = get_db_connection()
-                cursor = conn.cursor()  # Posodobimo vrednost, kjer je ključ 'hourly_rate'
-                cursor.execute("UPDATE settings SET value = ? WHERE key = 'hourly_rate'", (znesek,))
-                conn.commit()
-                conn.close()
+                znesek = float(nova_vrednost)
+                with get_db_connection() as conn:
+                    cursor = conn.cursor()  # Posodobimo vrednost, kjer je ključ 'hourly_rate'
+                    cursor.execute("UPDATE settings SET value = ? WHERE key = 'hourly_rate'", (znesek,))
+                    conn.commit()
                 self.rate_entry.delete(0, 'end')
                 print(f"Urna postavka posodobljena na: {znesek} €")
             except ValueError:
@@ -181,35 +179,74 @@ class SettingsFrame(customtkinter.CTkFrame):
 
     @staticmethod
     def ponastavi_postavko():
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        cursor.execute("UPDATE settings SET value = ? WHERE key = 'hourly_rate'", (7.73,))
-        conn.commit()
-        conn.close()
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("UPDATE settings SET value = ? WHERE key = 'hourly_rate'", (7.73,))
+            conn.commit()
         print("Postavka ponastavljena na 7.73")
 
-    @staticmethod
-    def izbrisi_vse_transakcije():
-        try:  # Dodaš potrditveno okno, če želiš, ali pa samo izbrišeš
-            conn = get_db_connection()
-            cursor = conn.cursor()
-            cursor.execute("DELETE FROM transakcije")  # Izbriše vrstice v tabeli
-            cursor.execute("DELETE FROM dogodki")
-            cursor.execute("UPDATE settings SET value = ? WHERE key = 'hourly_rate'", (7.73,))
-            cursor.execute("UPDATE settings SET value = ? WHERE key = 'premium'", ("off",))
-            conn.commit()
-            conn.close()
-            print("Vsi podatki o delu so izbrisani.")
-        except Exception as e:
-            print(f"Napaka pri brisanju: {e}")
+    def izbrisi_vse_transakcije(self):
+        """Pobriše vse podatke, a najprej zahteva potrditev uporabnika."""
+        potrditev = customtkinter.CTkToplevel(self)
+        potrditev.title("Potrditev brisanja")
+        potrditev.geometry("400x200")
+        potrditev.attributes("-topmost", True)
+        potrditev.grab_set()  # Modalno okno - uporabnik ne more klikati zunaj
+
+        # Centriranje
+        sirina = self.winfo_screenwidth()
+        visina = self.winfo_screenheight()
+        x = (sirina // 2) - 200
+        y = (visina // 2) - 100
+        potrditev.geometry(f"400x200+{x}+{y}")
+
+        customtkinter.CTkLabel(
+            potrditev,
+            text="Ali res želiš izbrisati VSE podatke?",
+            font=("Arial", 14, "bold"),
+            text_color="#e74c3c"
+        ).pack(pady=(30, 10))
+
+        customtkinter.CTkLabel(
+            potrditev,
+            text="Transakcije, dogodki in nastavitve bodo\nizgubljeni. Tega ni mogoče razveljaviti!",
+            font=("Arial", 12),
+            justify="center"
+        ).pack(pady=(0, 20))
+
+        def potrdi_in_izbrisi():
+            try:
+                with get_db_connection() as conn:
+                    cursor = conn.cursor()
+                    cursor.execute("DELETE FROM transakcije")
+                    cursor.execute("DELETE FROM dogodki")
+                    cursor.execute("UPDATE settings SET value = ? WHERE key = 'hourly_rate'", (7.73,))
+                    cursor.execute("UPDATE settings SET value = ? WHERE key = 'premium'", ("off",))
+                    conn.commit()
+                print("Vsi podatki o delu so izbrisani.")
+            except Exception as e:
+                print(f"Napaka pri brisanju: {e}")
+            potrditev.destroy()
+
+        btn_frame = customtkinter.CTkFrame(potrditev, fg_color="transparent")
+        btn_frame.pack(fill="x", padx=20, pady=10)
+
+        customtkinter.CTkButton(
+            btn_frame, text="Prekliči", fg_color="gray",
+            command=potrditev.destroy
+        ).pack(side="left", expand=True, padx=5)
+
+        customtkinter.CTkButton(
+            btn_frame, text="Izbriši vse", fg_color="#e74c3c", hover_color="#9c3025",
+            command=potrdi_in_izbrisi
+        ).pack(side="left", expand=True, padx=5)
 
     def teme(self):
         try:
-            povezava = get_db_connection()
-            vnos = povezava.cursor()
-            vnos.execute("SELECT value FROM settings WHERE key = 'premium' LIMIT 1")
-            rezultat = vnos.fetchone()
-            povezava.close()
+            with get_db_connection() as povezava:
+                vnos = povezava.cursor()
+                vnos.execute("SELECT value FROM settings WHERE key = 'premium' LIMIT 1")
+                rezultat = vnos.fetchone()
 
             premium_val = str(rezultat[0]) if rezultat else "0"
 
@@ -277,12 +314,11 @@ class SettingsFrame(customtkinter.CTkFrame):
     def nastavi_temo(self, ime_datoteke):
         try:
             pot_do_teme = os.path.join('assets', 'teme', ime_datoteke)
-            povezava = get_db_connection()
-            vnos = povezava.cursor()
-            # V bazo shraniš pot do JSON datoteke, da jo main.py ob zagonu prebere
-            vnos.execute('UPDATE settings SET value = ? WHERE key = "theme_path"', (pot_do_teme,))
-            povezava.commit()
-            povezava.close()
+            with get_db_connection() as povezava:
+                vnos = povezava.cursor()
+                # V bazo shraniš pot do JSON datoteke, da jo main.py ob zagonu prebere
+                vnos.execute('UPDATE settings SET value = ? WHERE key = "theme_path"', (pot_do_teme,))
+                povezava.commit()
             print(f"Tema nastavljena na: {ime_datoteke}")
         except Exception as e:
             print(f"Napaka pri shranjevanju teme: {e}")

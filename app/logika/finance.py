@@ -1,5 +1,6 @@
 from logika.database import get_db_connection
 
+
 def calculate_work_hours(price, hourly_rate):
     """Izračuna koliko ur moraš delati za določen predmet."""
     if hourly_rate <= 0: return 0
@@ -15,15 +16,14 @@ def can_afford_credit(monthly_income, monthly_expenses, installment):
 def get_hourly_rate():
     """Funkcija, ki jo kličeš v MoneyFrame za izračun."""
     try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        cursor.execute("SELECT value FROM settings WHERE key = 'hourly_rate'")
-        result = cursor.fetchone()
-        conn.close()
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT value FROM settings WHERE key = 'hourly_rate'")
+            result = cursor.fetchone()
 
-        if result:
-            return result[0]
-        return 7.73  # Če baze ni, vrne privzeto
+            if result and result[0] is not None:
+                return float(result[0])
+            return 7.73  # Če baze ni, vrne privzeto
     except Exception as e:
         print(f"Napaka pri branju baze: {e}")
         return 0.0
