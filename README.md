@@ -55,7 +55,7 @@ The application is divided into **four main tabs**, accessible via the bottom ta
 │           ( Active tab )                        │
 │                                                 │
 ├─────────────────────────────────────────────────┤
-│  📊 Stats │  💵 Money/Life │  ⚙️ Settings        │
+│  📊 Stats │  💵 Money/Life │  ⚙️ Settings      │
 └─────────────────────────────────────────────────┘
 ```
 
